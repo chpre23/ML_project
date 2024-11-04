@@ -27,6 +27,7 @@ from keras.layers import Dense, LSTM, Activation, Dropout, Input
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestRegressor
+from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 
 
@@ -150,14 +151,23 @@ def combine_zip_files_content(zip_urls):
     return combined_bytes_io
 
 
+
+def format_y_values(y, _):
+    """Custom function to format y-values."""
+    if y >= 1_000:
+        return f'{y / 1_000:.1f}K'  # Format thousands
+    else:
+        return f'{y:.0f}'  # Keep it as is for lower values
       
+
+
 def create_figure(dataframe):
     df = dataframe
     column_selection = selected_data_type.get()
     user_location = selected_location.get()
         
     # Create a figure object
-    fig, ax = plt.subplots(figsize=(6, 4))
+    fig, ax = plt.subplots(figsize=(8, 5))
         
     # Ensure the timestamp column is in datetime format
     df[df.columns[0]] = pd.to_datetime(df[df.columns[0]])
@@ -178,10 +188,22 @@ def create_figure(dataframe):
         ax.plot(daily_data['hour'], daily_data[column_selection])
     
     # Add labels and title
+    ax.set_title("Load data", fontsize=20)
     ax.set_xlim([0, 23])
+    #ax.set_ylim([0, df[column_selection].max()])
+    
     ax.set_xticks([0, 4, 8, 12, 16, 20])
-    ax.set_xlabel('Time of day')
-    ax.set_ylabel(column_selection)
+    ax.yaxis.set_major_formatter(FuncFormatter(format_y_values))  # Set custom formatter
+    
+    ax.set_xlabel('Time / 1 hour', fontsize=20)
+    if column_selection == "Energy Bid Load":
+        ax.set_ylabel(f'{column_selection} [MW]', fontsize=20, labelpad=0)
+    else:
+        ax.set_ylabel("Energy Load [MW]", fontsize=20, labelpad=0)
+        
+    ax.tick_params(axis='both', which='major', labelsize=16)  # Ticks fontsize
+    #ax.legend("Load data", fontsize=16)  # Legend fontsize
+    
  
     return fig
 
@@ -236,11 +258,12 @@ def generate_GUI_figure(all_zips_data, user_location, start_date, end_date):
 
 
 def plot_button_function(): 
-    user_location = selected_location.get() #'CAPITL'
+    #user_location = selected_location.get() #'CAPITL'
     user_start_date = LineEdit_01.get() #'2023-05-02'
     user_end_date = LineEdit_02.get() #'2023-07-03
     
     # Validate user inputs
+    #print('hello')
     if not validate_input_dates(user_start_date, user_end_date):
         return
     
@@ -258,7 +281,7 @@ def plot_button_function():
     
     # Place the canvas widget in the grid layout
     # Adjust row and column to display each plot as desired
-    canvas.get_tk_widget().place(relx=0.3, rely=0.725, anchor=tk.CENTER, width=595, height=395)
+    canvas.get_tk_widget().place(relx=0.3, rely=0.725, anchor=tk.CENTER, width=647.5, height=447.5)
 
 
 
@@ -281,7 +304,7 @@ def create_dataframe_from_xlsx_HQ(user_start_date, user_end_date):
             file_content = io.BytesIO(response.content)
             
             # Read the Excel file into a DataFrame
-            df = pd.read_excel(file_content)
+            df = pd.read_excel(file_content)#, engine='openpyxl')
             # Convert the "Date" column to datetime format
             df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
 
@@ -407,7 +430,7 @@ def get_locations():
     dropdown_menu_locations["font"] = ft
     dropdown_menu_locations["fg"] = "#000000"
     dropdown_menu_locations["justify"] = "center"
-    dropdown_menu_locations.place(relx=0.3, rely=0.21, anchor=tk.CENTER, width=150, height=30)
+    #dropdown_menu_locations.place(relx=0.3, rely=0.21, anchor=tk.CENTER, width=150, height=30)
     
     return location_options
     
@@ -429,10 +452,13 @@ def validate_input_dates(start_date, end_date):
     elif (selected_data_type.get() == "LBMP ($/MWHr)" or selected_data_type.get() == "Energy Bid Load") and start_date < "2001-06-01":
         messagebox.showerror("Error", "Invalid dates : start date must be > 2001-06-01 for NYISO data")   
         return False
+    elif (selected_data_type.get() == "Moyenne (MW)") and datetime.strptime(start_date, '%Y-%m-%d').year >= datetime.today().year:
+        messagebox.showerror("Error", "Invalid dates : current year data is not available for HQ data")
+        return False
     elif (selected_data_type.get() == "Moyenne (MW)") and start_date < "2019-01-01":
         messagebox.showerror("Error", "Invalid dates : start date must be > 2019-01-01 for HQ data")
         return False
-    elif selected_location.get() == "Select a location":
+    elif (selected_data_type.get() == "LBMP ($/MWHr)" or selected_data_type.get() == "Energy Bid Load") and selected_location.get() == "Select a location":
         messagebox.showerror("Error", "Invalid location")
         return False
     else:
@@ -484,7 +510,7 @@ def predict_button_function():
     elif datetime.strptime(user_start_date, "%Y-%m-%d") < datetime.today():
         messagebox.showerror("Error", "Invalid dates : start date must be today or after")
         return False
-    elif selected_location.get() == "Select a location":
+    elif (selected_data_type.get() == "LBMP ($/MWHr)" or selected_data_type.get() == "Energy Bid Load") and selected_location.get() == "Select a location":
         messagebox.showerror("Error", "Invalid location")
         return False
     
@@ -516,16 +542,22 @@ def predict_button_function():
         # Plot final results
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(result_frame.index, result_frame["pred_lstm"], "o")
-        ax.set_title("Predictions")
-        ax.set_ylabel(f"{selected_data_type.get()} (MW)")
-        ax.set_xlabel("Time / 1 hour");
+        ax.set_title("Predictions", fontsize=20)
+        ax.set_ylabel(f"{selected_data_type.get()} [MW]", fontsize=20, labelpad=0)
+        ax.set_xlabel("Time / 1 hour", fontsize=20);
+        
+        ax.tick_params(axis='both', which='major', labelsize=16)  # Ticks fontsize
+        ax.yaxis.set_major_formatter(FuncFormatter(format_y_values))  # Set custom formatter
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=3, integer=True))
+        #ax.legend("Predictions", fontsize=16)  # Legend fontsize
+        # plt.tight_layout()  # Adjust layout to make room for the rotated labels
         
         # Create a canvas for the figure
         canvas = FigureCanvasTkAgg(fig, master=root)
         canvas.draw()
         
         # Place the canvas widget in the grid layout
-        canvas.get_tk_widget().place(relx=0.7, rely=0.725, anchor=tk.CENTER, width=597.5, height=397.5)
+        canvas.get_tk_widget().place(relx=0.7, rely=0.725, anchor=tk.CENTER, width=647.5, height=447.5)
     else:
         df= pd.read_csv("HQ_LOAD_hourly_2019_2023.csv", header=0, index_col=0, parse_dates=True)
         
@@ -581,16 +613,21 @@ def predict_button_function():
         # Plot final results
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.plot(result_frame.index, result_frame["pred_ran"], "o")
-        ax.set_title("Predictions")
-        ax.set_ylabel(f"{selected_data_type.get()}")
-        ax.set_xlabel("Date");
+        ax.set_title("Predictions", fontsize=20)
+        ax.set_ylabel("Energy Load [MW]", fontsize=20, labelpad=0)
+        ax.set_xlabel("Time / 1 hour", fontsize=20)
+        
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=3, integer=True))
+        ax.yaxis.set_major_formatter(FuncFormatter(format_y_values))  # Set custom formatter
+        ax.tick_params(axis='both', which='major', labelsize=16)  # Ticks fontsize
+        #plt.tight_layout()  # Adjust layout to make room for the rotated labels
         
         # Create a canvas for the figure
         canvas = FigureCanvasTkAgg(fig, master=root)
         canvas.draw()
         
         # Place the canvas widget in the grid layout
-        canvas.get_tk_widget().place(relx=0.7, rely=0.725, anchor=tk.CENTER, width=595, height=395)
+        canvas.get_tk_widget().place(relx=0.7, rely=0.725, anchor=tk.CENTER, width=647.5, height=447.5)
 
 
         
@@ -748,8 +785,8 @@ def custom_loss(y_true, y_pred):
 root = tk.Tk()
 root.title("New York ISO and HQ")
 #setting window size
-width=1250
-height=1000
+width=750
+height=750
 screenwidth = root.winfo_screenwidth()
 screenheight = root.winfo_screenheight()
 alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth - width) / 2, (screenheight - height) / 2)
@@ -759,139 +796,139 @@ root.resizable(width=True, height=True)
 ### FRAMES
 # Create frame 1
 frame_NYISO = tk.Frame(root, bd=1, relief=tk.SOLID)
-frame_NYISO.place(relx=0.3, rely=0.15, anchor=tk.CENTER, width=250, height=200)
+frame_NYISO.place(relx=0.3, rely=0.15, anchor=tk.CENTER, width=300, height=250)
 
 # Create frame 2
 frame_HQ = tk.Frame(root, bd=1, relief=tk.SOLID)
-frame_HQ.place(relx=0.7, rely=0.15, anchor=tk.CENTER, width=250, height=200)
+frame_HQ.place(relx=0.7, rely=0.15, anchor=tk.CENTER, width=300, height=250)
 
 # Create frame 3
 frame_data = tk.Frame(root, bd=1, relief=tk.SOLID)
-frame_data.place(relx=0.3, rely=0.725, anchor=tk.CENTER, width=600, height=400)
+frame_data.place(relx=0.3, rely=0.725, anchor=tk.CENTER, width=650, height=450)
 
 # Create frame 4
 frame_forecast = tk.Frame(root, bd=1, relief=tk.SOLID)
-frame_forecast.place(relx=0.7, rely=0.725, anchor=tk.CENTER, width=600, height=400)
+frame_forecast.place(relx=0.7, rely=0.725, anchor=tk.CENTER, width=650, height=450)
 
 
 ### BUTTONS
 # Plot button
 GButton_01=tk.Button(root)
 GButton_01["bg"] = "#e9e9ed"
-ft = tkFont.Font(family='Times',size=15)
+ft = tkFont.Font(family='Times',size=20)
 GButton_01["font"] = ft
 GButton_01["fg"] = "#000000"
 GButton_01["justify"] = "center"
 GButton_01["text"] = "Plot"
-GButton_01.place(relx=0.4, rely=0.425, anchor=tk.CENTER, width=100, height=30)
+GButton_01.place(relx=0.4, rely=0.45, anchor=tk.CENTER, width=150, height=50)
 GButton_01["command"] = plot_button_function
 
 # Download button
 GButton_02=tk.Button(root)
 GButton_02["bg"] = "#e9e9ed"
-ft = tkFont.Font(family='Times',size=15) 
+ft = tkFont.Font(family='Times',size=20) 
 GButton_02["font"] = ft
 GButton_02["fg"] = "#000000"
 GButton_02["justify"] = "center"
 GButton_02["text"] = "Download"
-GButton_02.place(relx=0.5, rely=0.425, anchor=tk.CENTER, width=100, height=30)
+GButton_02.place(relx=0.5, rely=0.45, anchor=tk.CENTER, width=150, height=50)
 GButton_02["command"] = download_button_function
 
 # Predict button
 GButton_03=tk.Button(root)
 GButton_03["bg"] = "#e9e9ed"
-ft = tkFont.Font(family='Times',size=15) 
+ft = tkFont.Font(family='Times',size=20) 
 GButton_03["font"] = ft
 GButton_03["fg"] = "#000000"
 GButton_03["justify"] = "center"
 GButton_03["text"] = "Predict"
-GButton_03.place(relx=0.6, rely=0.425, anchor=tk.CENTER, width=100, height=30)
+GButton_03.place(relx=0.6, rely=0.45, anchor=tk.CENTER, width=150, height=50)
 GButton_03["command"] = predict_button_function
 
 
 ### LABELS
 # New York ISO label
 Label_01=tk.Label(root)
-ft = tkFont.Font(family='Times',size=16, weight='bold')
+ft = tkFont.Font(family='Times',size=24, weight='bold')
 Label_01["font"] = ft
 Label_01["fg"] = "#333333"
 Label_01["justify"] = "center"
 Label_01["text"] = "New York ISO"
-Label_01.place(relx=0.3,rely=0.08, anchor=tk.CENTER, width=150,height=50)
+Label_01.place(relx=0.3,rely=0.08, anchor=tk.CENTER, width=225,height=50)
 
 # Data type label 1
 Label_02=tk.Label(root)
-ft = tkFont.Font(family='Times',size=15)
+ft = tkFont.Font(family='Times',size=20)
 Label_02["font"] = ft
 Label_02["fg"] = "#333333"
 Label_02["justify"] = "center"
 Label_02["text"] = "Data type"
-Label_02.place(relx=0.3, rely=0.12, anchor=tk.CENTER, width=80, height=50)
+Label_02.place(relx=0.3, rely=0.12, anchor=tk.CENTER, width=150, height=50)
 
 # start date label
 Label_03=tk.Label(root)
-ft = tkFont.Font(family='Times',size=15)
+ft = tkFont.Font(family='Times',size=20)
 Label_03["font"] = ft
 Label_03["fg"] = "#333333"
 Label_03["justify"] = "center"
 Label_03["text"] = "Start date (YYYY-MM-DD) :"
-Label_03.place(relx=0.4, rely=0.325, anchor=tk.CENTER, width=250, height=50)
+Label_03.place(relx=0.4, rely=0.325, anchor=tk.CENTER, width=350, height=50)
 
 # end date label
 Label_04=tk.Label(root)
-ft = tkFont.Font(family='Times',size=15)
+ft = tkFont.Font(family='Times',size=20)
 Label_04["font"] = ft
 Label_04["fg"] = "#333333"
 Label_04["justify"] = "center"
 Label_04["text"] = "End date (YYYY-MM-DD) :"
-Label_04.place(relx=0.4, rely=0.375, anchor=tk.CENTER, width=250, height=50)
+Label_04.place(relx=0.4, rely=0.375, anchor=tk.CENTER, width=350, height=50)
 
 # Data type label 2
 Label_06=tk.Label(root)
-ft = tkFont.Font(family='Times',size=15)
+ft = tkFont.Font(family='Times',size=20)
 Label_06["font"] = ft
 Label_06["fg"] = "#333333"
 Label_06["justify"] = "center"
 Label_06["text"] = "Data type"
-Label_06.place(relx=0.7, rely=0.12, anchor=tk.CENTER, width=80, height=50)
+Label_06.place(relx=0.7, rely=0.12, anchor=tk.CENTER, width=150, height=50)
 
 # HQ label
 Label_07=tk.Label(root)
-ft = tkFont.Font(family='Times',size=16, weight='bold')
+ft = tkFont.Font(family='Times',size=24, weight='bold')
 Label_07["font"] = ft
 Label_07["fg"] = "#333333"
 Label_07["justify"] = "center"
 Label_07["text"] = "Hydro Quebec"
-Label_07.place(relx=0.7, rely=0.08, anchor=tk.CENTER, width=150 ,height=50)
+Label_07.place(relx=0.7, rely=0.08, anchor=tk.CENTER, width=200 ,height=50)
 
 # Location label
 Label_08=tk.Label(root)
-ft = tkFont.Font(family='Times',size=15)
+ft = tkFont.Font(family='Times',size=20)
 Label_08["font"] = ft
 Label_08["fg"] = "#333333"
 Label_08["justify"] = "center"
 Label_08["text"] = "Location"
-Label_08.place(relx=0.3, rely=0.18, anchor=tk.CENTER, width=80 ,height=50)
+Label_08.place(relx=0.3, rely=0.18, anchor=tk.CENTER, width=150 ,height=50)
 
 
 ### EDIT FIELDS
 # Start date edit field
 LineEdit_01=tk.Entry(root)
 LineEdit_01["borderwidth"] = "1px"
-ft = tkFont.Font(family='Times',size=12)
+ft = tkFont.Font(family='Times',size=20)
 LineEdit_01["font"] = ft
 LineEdit_01["fg"] = "#333333"
 LineEdit_01["justify"] = "center"
-LineEdit_01.place(relx=0.6, rely=0.325, anchor=tk.CENTER, width=150, height=30)
+LineEdit_01.place(relx=0.6, rely=0.325, anchor=tk.CENTER, width=250, height=50)
 
 # End date edit field
 LineEdit_02=tk.Entry(root)
 LineEdit_02["borderwidth"] = "1px"
-ft = tkFont.Font(family='Times',size=12)
+ft = tkFont.Font(family='Times',size=20)
 LineEdit_02["font"] = ft
 LineEdit_02["fg"] = "#333333"
 LineEdit_02["justify"] = "center"
-LineEdit_02.place(relx=0.6, rely=0.375, anchor=tk.CENTER, width=150, height=30)
+LineEdit_02.place(relx=0.6, rely=0.375, anchor=tk.CENTER, width=250, height=50)
 
 
 ### DROPDOWN MENU
@@ -905,7 +942,7 @@ location_options = get_locations()
 
 # Create a StringVar to hold the current selection
 selected_location.set("Select a location")  # Set default selection
-ft = tkFont.Font(family='Times', size=12)
+ft = tkFont.Font(family='Times', size=20)
 
 # Create an OptionMenu widget (dropdown menu)  
 dropdown_menu_locations = tk.OptionMenu(root, selected_location, *location_options)#, command=option_selected)
@@ -913,35 +950,35 @@ dropdown_menu_locations["bg"] ="#e9e9ed"
 dropdown_menu_locations["font"] = ft
 dropdown_menu_locations["fg"] = "#000000"
 dropdown_menu_locations["justify"] = "center"
-dropdown_menu_locations.place(relx=0.3, rely=0.21, anchor=tk.CENTER, width=150, height=30)
+dropdown_menu_locations.place(relx=0.3, rely=0.225, anchor=tk.CENTER, width=250, height=50)
 
 
 ### RADIO BUTTONS
 # Create the first radio button
 RButton_01 = tk.Radiobutton(root, text="LBMP", variable=selected_data_type, value="LBMP ($/MWHr)")
-ft1 = tkFont.Font(family='Times', size=10)
+ft1 = tkFont.Font(family='Times', size=20)
 RButton_01["font"] = ft1
 RButton_01["fg"] = "#333333"
 RButton_01["justify"] = "center"
 RButton_01["command"] = get_locations
-RButton_01.place(relx=0.27, rely=0.15, anchor=tk.CENTER, width=85, height=25)
+RButton_01.place(relx=0.27, rely=0.15, anchor=tk.CENTER, width=125, height=25)
 
 # Create the second radio button
 RButton_02 = tk.Radiobutton(root, text="LOAD", variable=selected_data_type, value="Energy Bid Load")
-ft2 = tkFont.Font(family='Times', size=10)
+ft2 = tkFont.Font(family='Times', size=20)
 RButton_02["font"] = ft2
 RButton_02["fg"] = "#333333"
 RButton_02["justify"] = "center"
-RButton_02.place(relx=0.33, rely=0.15, anchor=tk.CENTER, width=85, height=25)
+RButton_02.place(relx=0.33, rely=0.15, anchor=tk.CENTER, width=125, height=25)
 RButton_02["command"] = get_locations
 
 # Create the third radio button (HQ)
 RButton_03 = tk.Radiobutton(root, text="LOAD", variable=selected_data_type, value="Moyenne (MW)")
-ft2 = tkFont.Font(family='Times', size=10)
+ft2 = tkFont.Font(family='Times', size=20)
 RButton_03["font"] = ft2
 RButton_03["fg"] = "#333333"
 RButton_03["justify"] = "center"
-RButton_03.place(relx=0.7, rely=0.15, anchor=tk.CENTER, width=85, height=25)
+RButton_03.place(relx=0.7, rely=0.15, anchor=tk.CENTER, width=150, height=25)
 
 
 root.mainloop()
